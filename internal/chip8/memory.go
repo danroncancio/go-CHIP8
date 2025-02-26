@@ -4,11 +4,7 @@ type Memory struct {
 	memory [4 * 1024]byte
 }
 
-func newMemory() (*Memory, error) {
-	mem := &Memory{}
-
-	// Load font
-
+func (mem *Memory) loadFont() {
 	fontMemOffset := 0x50
 
 	font := []uint8{
@@ -31,8 +27,6 @@ func newMemory() (*Memory, error) {
 	}
 
 	copy(mem.memory[fontMemOffset:], font)
-
-	return mem, nil
 }
 
 func (m *Memory) loadRomIntoMemory(rom []byte) {

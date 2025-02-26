@@ -1,7 +1,7 @@
 package chip8
 
 import (
-	"fmt"
+	//"fmt"
 )
 
 type Nibbles struct {
@@ -22,34 +22,21 @@ type CPU struct {
 	stack     [16]uint16
 	opcode    uint16
 	nibbles   Nibbles
-
-	mem           *Memory
-	displayBuffer []byte
-	screenWidth   int
-	screenHeight  int
 }
 
-func newCPU(mem *Memory, displayBuffer []byte, screenWidth int, screenHeight int) (*CPU, error) {
-	cpu := &CPU{}
-
-	cpu.screenWidth = screenWidth
-	cpu.screenHeight = screenHeight
-
-	cpu.displayBuffer = displayBuffer
-	cpu.mem = mem
-	cpu.pc = 0x200 // Start of the rom data
-
-	return cpu, nil
+func (cpu *CPU) reset() {
+	cpu.pc = 0x200
+	cpu.I = 0
 }
 
-func (cpu *CPU) fetch() {
+func (cpu *CPU) fetch(mem *Memory) {
 	// Instructions are two bytes (Big endian)
 	// First we grab the first byte and shifted 8 bits to the left (hight byte of opcode)
 	// Second we get the next byte, no need to shift here
 
 	cpu.opcode = 0
-	cpu.opcode |= uint16(cpu.mem.memory[cpu.pc]) << 8
-	cpu.opcode |= uint16(cpu.mem.memory[cpu.pc+1])
+	cpu.opcode |= uint16(mem.memory[cpu.pc]) << 8
+	cpu.opcode |= uint16(mem.memory[cpu.pc+1])
 	cpu.pc += 2
 }
 
@@ -63,14 +50,14 @@ func (cpu *CPU) decode() {
 	cpu.nibbles.nnn = cpu.opcode & 0x0FFF
 }
 
-func (cpu *CPU) execute() {
-	fmt.Printf("Nibbles: First: %X - Second: %X - Third: %X\n", cpu.nibbles.first, cpu.nibbles.second, cpu.nibbles.third)
+func (cpu *CPU) execute(mem *Memory, dis *Display) {
+	// fmt.Printf("Nibbles: First: %X - Second: %X - Third: %X\n", cpu.nibbles.first, cpu.nibbles.second, cpu.nibbles.third)
 
 	switch cpu.nibbles.first {
 	case 0x0:
 		switch cpu.nibbles.nn {
 		case 0xE0: // (CLS) Clear the display
-			clear(cpu.displayBuffer)
+			clear(dis.BinaryBuffer[:])
 		}
 	case 0x1: // (JP) Jump to adress NNN
 		cpu.pc = cpu.nibbles.nnn
@@ -81,26 +68,26 @@ func (cpu *CPU) execute() {
 	case 0xA: // (LD I) Set I index to NNN
 		cpu.I = cpu.nibbles.nnn
 	case 0xD: // (DRW) Draw
-		x := cpu.registers[cpu.nibbles.second] % uint8(cpu.screenWidth)
-		y := cpu.registers[cpu.nibbles.third] % uint8(cpu.screenHeight)
+		x := cpu.registers[cpu.nibbles.second] % uint8(dis.ResolutionWidth)
+		y := cpu.registers[cpu.nibbles.third] % uint8(dis.ResolutionHeight)
 
 		cpu.registers[0xF] = 0
 
 		bytesToRead := cpu.nibbles.n
 
 		for row := 0; uint16(row) < bytesToRead; row++ {
-			spriteData := cpu.mem.memory[cpu.I+uint16(row)]
+			spriteData := mem.memory[cpu.I+uint16(row)]
 
 			for col := 0; col < 8; col++ {
 				pixelBit := (spriteData >> (7 - col)) & 1
 
-				idx := (int(y) * cpu.screenWidth) + (int(x) + col)
+				idx := (int(y) * dis.ResolutionWidth) + (int(x) + col)
 
 				if pixelBit == 1 {
-					if cpu.displayBuffer[idx] == 1 {
+					if dis.BinaryBuffer[idx] == 1 {
 						cpu.registers[0xF] = 1 // Set VF for collision
 					}
-					cpu.displayBuffer[idx] ^= 1
+					dis.BinaryBuffer[idx] ^= 1
 				}
 			}
 
@@ -109,8 +96,8 @@ func (cpu *CPU) execute() {
 	}
 }
 
-func (cpu *CPU) tick() {
-	cpu.fetch()
+func (cpu *CPU) tick(mem *Memory, dis *Display) {
+	cpu.fetch(mem)
 	cpu.decode()
-	cpu.execute()
+	cpu.execute(mem, dis)
 }

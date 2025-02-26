@@ -9,13 +9,13 @@ import (
 )
 
 func main() {
-	ebiten.SetWindowSize(chip8.WndWidth, chip8.WndHeight)
-	ebiten.SetWindowTitle("Go CHIP-8")
-
 	app, err := chip8.New()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	ebiten.SetWindowSize(app.Display.WindowWidth, app.Display.WindowHeight)
+	ebiten.SetWindowTitle("Go CHIP-8")
 
 	if err := ebiten.RunGame(app); err != nil {
 		log.Fatal(err)
