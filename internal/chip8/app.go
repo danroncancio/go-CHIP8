@@ -9,10 +9,17 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
+const (
+	cpuClockSpeed = 500
+	frameRate     = 60
+)
+
 type Chip8 struct {
-	cpu     CPU
-	memory  Memory
-	Display Display
+	cpu               CPU
+	memory            Memory
+	input             Input
+	Display           Display
+	cpuCyclesPerFrame int
 }
 
 func New() (*Chip8, error) {
@@ -26,6 +33,11 @@ func New() (*Chip8, error) {
 	app.Display.WindowHeight = 320
 	app.Display.ResolutionWidth = 64
 	app.Display.ResolutionHeight = 32
+
+	// Simulate a 500Hz CPU clock dynamically
+	app.cpuCyclesPerFrame = cpuClockSpeed / frameRate
+
+	app.input.initInput()
 
 	app.memory.loadFont()
 
@@ -50,7 +62,13 @@ func New() (*Chip8, error) {
 }
 
 func (chip8 *Chip8) Update() error {
-	chip8.cpu.tick(&chip8.memory, &chip8.Display)
+	chip8.input.processInput()
+
+	for i := 0; i < chip8.cpuCyclesPerFrame; i++ {
+		chip8.cpu.tick(&chip8.memory, &chip8.input, &chip8.Display)
+	}
+
+	chip8.cpu.updateTimers()
 
 	return nil
 }

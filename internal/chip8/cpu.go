@@ -1,7 +1,8 @@
 package chip8
 
 import (
-// "fmt"
+	"fmt"
+	"math/rand"
 )
 
 type Nibbles struct {
@@ -23,11 +24,15 @@ type CPU struct {
 	stackIdx  uint8
 	opcode    uint16
 	nibbles   Nibbles
+	wait      bool
+	r         *rand.Rand
 }
 
 func (cpu *CPU) reset() {
 	cpu.pc = 0x200
 	cpu.I = 0
+
+	cpu.r = rand.New(rand.NewSource(1337))
 }
 
 func (cpu *CPU) fetch(mem *Memory) {
@@ -38,7 +43,10 @@ func (cpu *CPU) fetch(mem *Memory) {
 	cpu.opcode = 0
 	cpu.opcode |= uint16(mem.memory[cpu.pc]) << 8
 	cpu.opcode |= uint16(mem.memory[cpu.pc+1])
-	cpu.pc += 2
+
+	if !cpu.wait {
+		cpu.pc += 2
+	}
 }
 
 func (cpu *CPU) decode() {
@@ -51,7 +59,7 @@ func (cpu *CPU) decode() {
 	cpu.nibbles.nnn = cpu.opcode & 0x0FFF
 }
 
-func (cpu *CPU) execute(mem *Memory, dis *Display) {
+func (cpu *CPU) execute(mem *Memory, inp *Input, dis *Display) {
 	// fmt.Printf("Nibbles: First: %X - Second: %X - Third: %X\n", cpu.nibbles.first, cpu.nibbles.second, cpu.nibbles.third)
 
 	switch cpu.nibbles.first {
@@ -95,9 +103,23 @@ func (cpu *CPU) execute(mem *Memory, dis *Display) {
 			cpu.registers[cpu.nibbles.second] &= cpu.registers[cpu.nibbles.third]
 		case 0x3:
 			cpu.registers[cpu.nibbles.second] ^= cpu.registers[cpu.nibbles.third]
-		case 0x4: // Add TODO: Manage carry on VF?
-			cpu.registers[cpu.nibbles.second] += cpu.registers[cpu.nibbles.third]
-		case 0x5: // Sub TODO: Manage carry on VF?
+		case 0x4:
+			var sum uint16 = uint16(cpu.registers[cpu.nibbles.second]) + uint16(cpu.registers[cpu.nibbles.third])
+
+			if sum > 255 {
+				cpu.registers[0xF] = 1
+			} else {
+				cpu.registers[0xF] = 0
+			}
+
+			cpu.registers[cpu.nibbles.second] = uint8(sum)
+		case 0x5:
+			if cpu.registers[cpu.nibbles.second] >= cpu.registers[cpu.nibbles.third] {
+				cpu.registers[0xF] = 1
+			} else {
+				cpu.registers[0xF] = 0
+			}
+
 			cpu.registers[cpu.nibbles.second] -= cpu.registers[cpu.nibbles.third]
 		case 0x6:
 			cpu.registers[0xF] = cpu.registers[cpu.nibbles.second] & 0x1
@@ -120,6 +142,9 @@ func (cpu *CPU) execute(mem *Memory, dis *Display) {
 		}
 	case 0xA: // (LD I) Set I index to NNN
 		cpu.I = cpu.nibbles.nnn
+	case 0xC:
+		randByte := uint8(cpu.r.Intn(256))
+		cpu.registers[cpu.nibbles.second] = randByte & uint8(cpu.nibbles.nn)
 	case 0xD: // (DRW) Draw
 		x := cpu.registers[cpu.nibbles.second] % uint8(dis.ResolutionWidth)
 		y := cpu.registers[cpu.nibbles.third] % uint8(dis.ResolutionHeight)
@@ -146,8 +171,36 @@ func (cpu *CPU) execute(mem *Memory, dis *Display) {
 
 			y++
 		}
+	case 0xE:
+		switch cpu.nibbles.nn {
+		case 0x9E:
+			if inp.keys[cpu.registers[cpu.nibbles.second]] {
+				cpu.pc += 2
+				fmt.Println("Key pressed")
+			}
+		case 0xA1:
+			if !inp.keys[cpu.registers[cpu.nibbles.second]] {
+				cpu.pc += 2
+				fmt.Println("Key released")
+			}
+		}
 	case 0xF:
 		switch cpu.nibbles.nn {
+		case 0x07:
+			cpu.registers[cpu.nibbles.second] = cpu.delay
+		case 0x0A:
+			cpu.wait = true
+
+			for i := 0; i < len(inp.keys); i++ {
+				if inp.keys[i] {
+					cpu.registers[cpu.nibbles.second] = uint8(i)
+					cpu.wait = false
+				}
+			}
+		case 0x15:
+			cpu.delay = cpu.registers[cpu.nibbles.second]
+		case 0x18:
+			cpu.sound = cpu.registers[cpu.nibbles.second]
 		case 0x1E:
 			cpu.I += uint16(cpu.registers[cpu.nibbles.second])
 		case 0x29:
@@ -170,8 +223,18 @@ func (cpu *CPU) execute(mem *Memory, dis *Display) {
 	}
 }
 
-func (cpu *CPU) tick(mem *Memory, dis *Display) {
+func (cpu *CPU) updateTimers() {
+	if cpu.delay > 0 {
+		cpu.delay -= 1
+	}
+
+	if cpu.sound > 0 {
+		cpu.sound -= 1
+	}
+}
+
+func (cpu *CPU) tick(mem *Memory, inp *Input, dis *Display) {
 	cpu.fetch(mem)
 	cpu.decode()
-	cpu.execute(mem, dis)
+	cpu.execute(mem, inp, dis)
 }
