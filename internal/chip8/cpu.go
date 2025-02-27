@@ -1,7 +1,7 @@
 package chip8
 
 import (
-	//"fmt"
+// "fmt"
 )
 
 type Nibbles struct {
@@ -20,6 +20,7 @@ type CPU struct {
 	sound     uint8
 	pc        uint16
 	stack     [16]uint16
+	stackIdx  uint8
 	opcode    uint16
 	nibbles   Nibbles
 }
@@ -58,13 +59,65 @@ func (cpu *CPU) execute(mem *Memory, dis *Display) {
 		switch cpu.nibbles.nn {
 		case 0xE0: // (CLS) Clear the display
 			clear(dis.BinaryBuffer[:])
+		case 0xEE: // (RET) Return from a subroutine
+			cpu.pc = cpu.stack[cpu.stackIdx-1]
+			cpu.stackIdx -= 1
 		}
 	case 0x1: // (JP) Jump to adress NNN
 		cpu.pc = cpu.nibbles.nnn
+	case 0x2: // (CALL) Call subroutine at nnn
+		cpu.stack[cpu.stackIdx] = cpu.pc
+		cpu.stackIdx += 1
+		cpu.pc = cpu.nibbles.nnn
+	case 0x3: // (SE) Skip next instruction if VX = NN
+		if cpu.registers[cpu.nibbles.second] == uint8(cpu.nibbles.nn) {
+			cpu.pc += 2
+		}
+	case 0x4: // (SNE) Skip next instruction if VX != NN
+		if cpu.registers[cpu.nibbles.second] != uint8(cpu.nibbles.nn) {
+			cpu.pc += 2
+		}
+	case 0x5: // (SE) Skip next instruction if VX = VY
+		if cpu.registers[cpu.nibbles.second] == cpu.registers[cpu.nibbles.third] {
+			cpu.pc += 2
+		}
 	case 0x6: // (LD) Set register VX to NN
 		cpu.registers[cpu.nibbles.second] = uint8(cpu.nibbles.nn)
 	case 0x7: // (ADD) Add value NN to VX
 		cpu.registers[cpu.nibbles.second] += uint8(cpu.nibbles.nn)
+	case 0x8:
+		switch cpu.nibbles.n {
+		case 0x0:
+			cpu.registers[cpu.nibbles.second] = cpu.registers[cpu.nibbles.third]
+		case 0x1:
+			cpu.registers[cpu.nibbles.second] |= cpu.registers[cpu.nibbles.third]
+		case 0x2:
+			cpu.registers[cpu.nibbles.second] &= cpu.registers[cpu.nibbles.third]
+		case 0x3:
+			cpu.registers[cpu.nibbles.second] ^= cpu.registers[cpu.nibbles.third]
+		case 0x4: // Add TODO: Manage carry on VF?
+			cpu.registers[cpu.nibbles.second] += cpu.registers[cpu.nibbles.third]
+		case 0x5: // Sub TODO: Manage carry on VF?
+			cpu.registers[cpu.nibbles.second] -= cpu.registers[cpu.nibbles.third]
+		case 0x6:
+			cpu.registers[0xF] = cpu.registers[cpu.nibbles.second] & 0x1
+			cpu.registers[cpu.nibbles.second] >>= 1
+		case 0x7:
+			if cpu.registers[cpu.nibbles.third] >= cpu.registers[cpu.nibbles.second] {
+				cpu.registers[0xF] = 1
+			} else {
+				cpu.registers[0xF] = 0
+			}
+
+			cpu.registers[cpu.nibbles.second] = cpu.registers[cpu.nibbles.third] - cpu.registers[cpu.nibbles.second]
+		case 0xE:
+			cpu.registers[0xF] = (cpu.registers[cpu.nibbles.second] & 0x80) >> 7
+			cpu.registers[cpu.nibbles.second] <<= 1
+		}
+	case 0x9:
+		if cpu.registers[cpu.nibbles.second] != cpu.registers[cpu.nibbles.third] {
+			cpu.pc += 2
+		}
 	case 0xA: // (LD I) Set I index to NNN
 		cpu.I = cpu.nibbles.nnn
 	case 0xD: // (DRW) Draw
@@ -92,6 +145,27 @@ func (cpu *CPU) execute(mem *Memory, dis *Display) {
 			}
 
 			y++
+		}
+	case 0xF:
+		switch cpu.nibbles.nn {
+		case 0x1E:
+			cpu.I += uint16(cpu.registers[cpu.nibbles.second])
+		case 0x29:
+			cpu.I = 0x50 + (uint16(cpu.registers[cpu.nibbles.second]) * 5)
+		case 0x33:
+			value := cpu.registers[cpu.nibbles.second]
+
+			mem.memory[cpu.I] = value / 100
+			mem.memory[cpu.I+1] = (value / 10) % 10
+			mem.memory[cpu.I+2] = value % 10
+		case 0x55:
+			for i := 0; i <= int(cpu.nibbles.second); i++ {
+				mem.memory[int(cpu.I)+i] = cpu.registers[i]
+			}
+		case 0x65:
+			for i := 0; i <= int(cpu.nibbles.second); i++ {
+				cpu.registers[i] = mem.memory[int(cpu.I)+i]
+			}
 		}
 	}
 }

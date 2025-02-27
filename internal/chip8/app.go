@@ -10,9 +10,9 @@ import (
 )
 
 type Chip8 struct {
-	cpu           CPU
-	memory        Memory
-	Display       Display
+	cpu     CPU
+	memory  Memory
+	Display Display
 }
 
 func New() (*Chip8, error) {
